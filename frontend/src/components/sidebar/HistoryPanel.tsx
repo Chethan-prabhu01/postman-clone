@@ -2,7 +2,6 @@
 import { useAppStore } from '@/lib/store'
 import { Clock, Trash2 } from 'lucide-react'
 import { historyApi } from '@/lib/api'
-import { setHistory } from '@/lib/store'
 import toast from 'react-hot-toast'
 
 function MethodBadge({ method }: { method: string }) {

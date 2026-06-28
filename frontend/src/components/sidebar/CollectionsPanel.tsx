@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { ChevronRight, ChevronDown, FolderOpen, Folder, MoreHorizontal, Plus, Pencil, Trash2, FolderPlus } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ChevronRight, ChevronDown, FolderOpen, Folder, MoreHorizontal, Pencil, Trash2, FolderPlus } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { collectionsApi, requestsApi } from '@/lib/api'
 import { CollectionTree, SavedRequestRaw } from '@/types'
@@ -19,21 +19,23 @@ function RequestItem({ req, collectionId, onDeleted }: { req: SavedRequestRaw; c
   const [menuOpen, setMenuOpen] = useState(false)
 
   const handleOpen = () => {
-    let headers = [], params = {}, authData = {}
-    try { headers = JSON.parse(req.headers) } catch {}
-    try { params = JSON.parse(req.params) } catch {}
-    try { authData = JSON.parse(req.auth_data) } catch {}
+    let headers: Array<{ key: string; value: string; enabled: boolean }> = []
+    let params: Array<{ key: string; value: string; enabled: boolean }> = []
+    let authData: Record<string, string> = {}
+    try { headers = JSON.parse(req.headers) } catch { /* ignore */ }
+    try { params = JSON.parse(req.params) } catch { /* ignore */ }
+    try { authData = JSON.parse(req.auth_data) } catch { /* ignore */ }
 
     openTab({
       id: req.id,
       name: req.name,
-      method: req.method as any,
+      method: req.method as 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS',
       url: req.url,
       headers: headers.length ? headers : [{ key: '', value: '', enabled: true }],
-      params: Array.isArray(params) ? (params.length ? params : [{ key: '', value: '', enabled: true }]) : [{ key: '', value: '', enabled: true }],
-      bodyType: req.body_type as any,
+      params: params.length ? params : [{ key: '', value: '', enabled: true }],
+      bodyType: req.body_type as 'none' | 'raw' | 'form-data' | 'urlencoded',
       bodyContent: req.body_content || '',
-      authType: req.auth_type as any,
+      authType: req.auth_type as 'none' | 'bearer' | 'basic',
       authData,
       collectionId: req.collection_id,
       folderId: req.folder_id,
@@ -119,7 +121,7 @@ function CollectionItem({ col, onRefresh }: { col: CollectionTree; onRefresh: ()
   }
 
   return (
-    <div className="select-none">
+    <div className="select-none relative">
       <div className="group flex items-center gap-1 px-2 py-2 rounded hover:bg-postman-surface cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <span style={{ color: col.color }} className="shrink-0">
           {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -133,7 +135,7 @@ function CollectionItem({ col, onRefresh }: { col: CollectionTree; onRefresh: ()
           <MoreHorizontal className="w-3.5 h-3.5 text-postman-text-muted" />
         </button>
         {menuOpen && (
-          <div className="absolute right-2 bg-postman-panel border border-postman-border rounded shadow-xl z-50 min-w-40 py-1" onClick={e => e.stopPropagation()}>
+          <div className="absolute right-2 top-8 bg-postman-panel border border-postman-border rounded shadow-xl z-50 min-w-40 py-1" onClick={e => e.stopPropagation()}>
             <button onClick={handleAddFolder} className="w-full px-3 py-1.5 text-xs text-left text-postman-text-muted hover:text-postman-text hover:bg-postman-surface flex items-center gap-2"><FolderPlus className="w-3 h-3" />Add Folder</button>
             <button onClick={handleRename} className="w-full px-3 py-1.5 text-xs text-left text-postman-text-muted hover:text-postman-text hover:bg-postman-surface flex items-center gap-2"><Pencil className="w-3 h-3" />Rename</button>
             <div className="border-t border-postman-border my-1" />
@@ -144,18 +146,18 @@ function CollectionItem({ col, onRefresh }: { col: CollectionTree; onRefresh: ()
 
       {expanded && (
         <div className="ml-3 border-l border-postman-border pl-2 space-y-0.5">
-          {/* Root requests */}
           {col.requests.map(req => (
             <RequestItem key={req.id} req={req} collectionId={col.id} onDeleted={onRefresh} />
           ))}
-          {/* Folders */}
           {col.folders.map(folder => (
             <div key={folder.id}>
               <div
                 className="flex items-center gap-1.5 px-2 py-1.5 rounded hover:bg-postman-surface cursor-pointer"
                 onClick={() => toggleFolder(folder.id)}
               >
-                {folderExpanded[folder.id] ? <ChevronDown className="w-3 h-3 text-postman-text-dim" /> : <ChevronRight className="w-3 h-3 text-postman-text-dim" />}
+                {folderExpanded[folder.id]
+                  ? <ChevronDown className="w-3 h-3 text-postman-text-dim" />
+                  : <ChevronRight className="w-3 h-3 text-postman-text-dim" />}
                 <Folder className="w-3.5 h-3.5 text-postman-text-muted" />
                 <span className="text-xs text-postman-text-muted truncate">{folder.name}</span>
               </div>
@@ -175,22 +177,25 @@ function CollectionItem({ col, onRefresh }: { col: CollectionTree; onRefresh: ()
 }
 
 export default function CollectionsPanel() {
-  const { collections, setCollections } = useAppStore()
+  const { setCollections } = useAppStore()
   const [trees, setTrees] = useState<CollectionTree[]>([])
 
-  const loadTrees = async () => {
+  const loadTrees = useCallback(async () => {
     try {
       const res = await collectionsApi.list()
       setCollections(res.data)
-      const treePromises = res.data.map((c: any) => collectionsApi.getTree(c.id))
-      const treeResults = await Promise.all(treePromises)
+      const treeResults = await Promise.all(
+        res.data.map((c: { id: number }) => collectionsApi.getTree(c.id))
+      )
       setTrees(treeResults.map(r => r.data))
     } catch (e) {
       console.error(e)
     }
-  }
+  }, [setCollections])
 
-  useEffect(() => { loadTrees() }, [collections.length])
+  useEffect(() => {
+    loadTrees()
+  }, [loadTrees])
 
   if (trees.length === 0) {
     return (

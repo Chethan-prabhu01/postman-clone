@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { X, FolderOpen, ChevronDown } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, FolderOpen } from 'lucide-react'
 import { useAppStore } from '@/lib/store'
 import { collectionsApi, requestsApi } from '@/lib/api'
 import { Tab, CollectionTree } from '@/types'
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export default function SaveRequestModal({ tab, onClose }: Props) {
-  const { collections, setCollections, updateRequest } = useAppStore()
+  const { setCollections, updateRequest } = useAppStore()
   const [trees, setTrees] = useState<CollectionTree[]>([])
   const [name, setName] = useState(tab.requestState.name || 'Untitled Request')
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(
@@ -23,15 +23,18 @@ export default function SaveRequestModal({ tab, onClose }: Props) {
   )
   const [saving, setSaving] = useState(false)
 
+  const loadCollections = useCallback(async () => {
+    const res = await collectionsApi.list()
+    setCollections(res.data)
+    const treeResults = await Promise.all(
+      res.data.map((c: { id: number }) => collectionsApi.getTree(c.id))
+    )
+    setTrees(treeResults.map(r => r.data))
+  }, [setCollections])
+
   useEffect(() => {
-    const load = async () => {
-      const res = await collectionsApi.list()
-      setCollections(res.data)
-      const treeResults = await Promise.all(res.data.map((c: any) => collectionsApi.getTree(c.id)))
-      setTrees(treeResults.map(r => r.data))
-    }
-    load()
-  }, [])
+    loadCollections()
+  }, [loadCollections])
 
   const selectedCollection = trees.find(t => t.id === selectedCollectionId)
 
@@ -54,13 +57,18 @@ export default function SaveRequestModal({ tab, onClose }: Props) {
         collection_id: selectedCollectionId,
         folder_id: selectedFolderId || null,
       }
-
       if (req.id && req.isSaved) {
         await requestsApi.update(req.id, payload)
         toast.success('Request updated')
       } else {
         const res = await requestsApi.create(payload)
-        updateRequest(tab.id, { id: res.data.id, name: name.trim(), isSaved: true, collectionId: selectedCollectionId, folderId: selectedFolderId ?? undefined })
+        updateRequest(tab.id, {
+          id: res.data.id,
+          name: name.trim(),
+          isSaved: true,
+          collectionId: selectedCollectionId,
+          folderId: selectedFolderId ?? undefined,
+        })
         toast.success('Request saved')
       }
       onClose()
@@ -74,7 +82,6 @@ export default function SaveRequestModal({ tab, onClose }: Props) {
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-postman-panel border border-postman-border rounded-xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-postman-border">
           <h2 className="text-sm font-semibold text-postman-text">Save Request</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-postman-surface text-postman-text-muted hover:text-postman-text">
@@ -82,9 +89,7 @@ export default function SaveRequestModal({ tab, onClose }: Props) {
           </button>
         </div>
 
-        {/* Body */}
         <div className="p-5 space-y-4">
-          {/* Name */}
           <div>
             <label className="block text-xs text-postman-text-muted mb-1.5">Request Name</label>
             <input
@@ -97,7 +102,6 @@ export default function SaveRequestModal({ tab, onClose }: Props) {
             />
           </div>
 
-          {/* Collection */}
           <div>
             <label className="block text-xs text-postman-text-muted mb-1.5">Collection</label>
             <div className="space-y-1 max-h-40 overflow-y-auto border border-postman-border rounded-lg">
@@ -109,7 +113,9 @@ export default function SaveRequestModal({ tab, onClose }: Props) {
                     key={col.id}
                     onClick={() => { setSelectedCollectionId(col.id); setSelectedFolderId(null) }}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-left text-xs transition-colors ${
-                      selectedCollectionId === col.id ? 'bg-postman-orange/10 text-postman-text' : 'text-postman-text-muted hover:bg-postman-surface hover:text-postman-text'
+                      selectedCollectionId === col.id
+                        ? 'bg-postman-orange/10 text-postman-text'
+                        : 'text-postman-text-muted hover:bg-postman-surface hover:text-postman-text'
                     }`}
                   >
                     <FolderOpen className="w-3.5 h-3.5 shrink-0" style={{ color: col.color }} />
@@ -120,7 +126,6 @@ export default function SaveRequestModal({ tab, onClose }: Props) {
             </div>
           </div>
 
-          {/* Folder (if collection selected and has folders) */}
           {selectedCollection && selectedCollection.folders.length > 0 && (
             <div>
               <label className="block text-xs text-postman-text-muted mb-1.5">Folder (optional)</label>
@@ -149,7 +154,6 @@ export default function SaveRequestModal({ tab, onClose }: Props) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex justify-end gap-2 px-5 py-4 border-t border-postman-border">
           <button onClick={onClose} className="px-4 py-2 text-xs rounded-lg border border-postman-border text-postman-text-muted hover:text-postman-text hover:border-postman-border-light transition-colors">
             Cancel
