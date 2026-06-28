@@ -3,9 +3,7 @@ backend/venv/
 backend/__pycache__/
 *.pyc
 
-# SQLite
-*.db
-*.sqlite3
+
 
 # Node
 frontend/node_modules/
