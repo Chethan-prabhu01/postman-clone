@@ -1,0 +1,23 @@
+# Node
+frontend/node_modules
+frontend/.next
+
+# Python
+backend/venv
+backend/__pycache__
+backend/*.pyc
+
+# Database
+*.db
+*.sqlite3
+
+# Environment
+.env
+.env.local
+
+# VS Code
+.vscode
+
+# OS
+.DS_Store
+Thumbs.db
